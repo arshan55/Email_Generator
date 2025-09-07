@@ -29,8 +29,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Don't fail at import time if the API key is missing; warn instead. We'll error only when endpoints that need it are called.
 if not GEMINI_API_KEY:
-    raise ValueError("Missing GEMINI_API_KEY environment variable")
+    logger.warning("GEMINI_API_KEY is not set. Endpoints requiring Gemini will fail until it's provided.")
 
 # Fixed Pydantic models with proper typing and defaults
 class Contact(BaseModel):
@@ -76,20 +77,16 @@ class AudioRequest(BaseModel):
     language: str = "en"
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    if not GEMINI_API_KEY:
-        raise ValueError("API key for Gemini is required")
-    # Initialize Gemini here
-    genai.configure(api_key=GEMINI_API_KEY)
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content("Test")
-        if not response:
-            raise ValueError("Unable to generate test content")
-        logger.info("Gemini API initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to configure Gemini API: {str(e)}")
-        raise
+def lifespan(app: FastAPI):
+    # Configure Gemini if an API key is available, but don't block app startup.
+    if GEMINI_API_KEY:
+        try:
+            genai.configure(api_key=GEMINI_API_KEY)
+            logger.info("Gemini API configured.")
+        except Exception as e:
+            logger.warning(f"Failed to configure Gemini API at startup: {str(e)}")
+    else:
+        logger.info("Starting without GEMINI_API_KEY; UI and non-AI endpoints will still work.")
     yield
 
 app = FastAPI(
